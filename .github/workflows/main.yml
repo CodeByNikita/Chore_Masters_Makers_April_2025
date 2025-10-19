@@ -1,0 +1,84 @@
+# The name of the workflow
+name: Build and Test
+
+# This workflow will run on any push to the repository
+on: push
+
+jobs:
+  build_and_test:
+    runs-on: macos-latest
+    environment: Testing
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v3
+
+      - name: Install NVM (macOS)
+        run: |
+          brew install nvm
+          mkdir -p ~/.nvm
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash
+
+      - name: Load NVM
+        run: |
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" || echo "nvm.sh not found"
+          echo "NVM_DIR=$NVM_DIR" >> $GITHUB_ENV
+
+      - name: Verify NVM Installation
+        run: |
+          source $NVM_DIR/nvm.sh
+          nvm --version
+
+      - name: Install Dependencies
+        run: |
+          source $NVM_DIR/nvm.sh
+          nvm install 20
+          nvm use 20
+          cd frontend
+          npm install
+          cd ../backend
+          npm install
+
+      - name: Install MongoDB (macOS)
+        run: |
+          brew tap mongodb/brew
+          brew install mongodb-community@6.0
+
+      - name: Start MongoDB Service (macOS)
+        run: |
+          brew services start mongodb/brew/mongodb-community@6.0
+
+      - name: Run Backend Tests with Coverage and Threshold
+        env:
+          MONGODB_URL: ${{secrets.MONGODB_URL}}
+          JWT_SECRET: ${{secrets.JWT_SECRET}}
+        run: |
+          # Run Jest with coverage enabled and thresholds set via jest.config.js
+          cd backend
+          npm run coverage
+
+      - name: Run Frontend Tests
+        env:
+          VITE_BACKEND_URL: ${{secrets.VITE_BACKEND_URL}}
+        run: |
+          cd frontend
+          npm run coverage
+
+  deploy_backend:
+    needs: build_and_test
+    if: github.ref == 'refs/heads/main' && success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Backend to Render
+        run: |
+          curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+
+  deploy_frontend:
+    needs: build_and_test
+    if: github.ref == 'refs/heads/main' && success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Frontend to Render
+        run: |
+          curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}

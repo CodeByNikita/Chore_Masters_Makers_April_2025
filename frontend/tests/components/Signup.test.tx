@@ -1,0 +1,256 @@
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, test, vi, beforeEach, expect } from "vitest";
+import React from "react";
+import { BrowserRouter } from "react-router-dom";
+import Signup from "../../src/components/Signup";
+import * as utils from "../../src/utils/utils";
+import * as parent from "../../src/services/parent";
+
+// Mock modules and functions
+vi.mock("@tanstack/react-query", () => ({
+  useMutation: ({ mutationFn, onSuccess }) => ({
+    mutate: vi.fn((data) => {
+      // Call the mutation function with the data
+      try {
+        const result = mutationFn(data);
+        if (result instanceof Promise) {
+          return result.then(() => {
+            onSuccess?.();
+          });
+        } else {
+          onSuccess?.();
+        }
+      } catch (error) {
+        // Handle error case
+      }
+    }),
+    isError: false,
+    isPending: false,
+    error: null,
+  }),
+}));
+
+vi.mock("react-router", () => ({
+  useNavigate: () => vi.fn(),
+}));
+
+vi.mock("../../src/utils/utils", () => ({
+  convertToBase64: vi.fn(),
+  validatePassword: vi.fn(),
+}));
+
+vi.mock("../../src/services/parent", () => ({
+  postAddParent: vi.fn(),
+}));
+
+// Mock URL.createObjectURL
+global.URL.createObjectURL = vi.fn(() => "mocked-url");
+
+describe("Signup Component", () => {
+  const onToggleLoginMock = vi.fn();
+  
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  
+  const renderSignup = () => {
+    return render(
+      <BrowserRouter>
+        <Signup onToggleLogin={onToggleLoginMock} />
+      </BrowserRouter>
+    );
+  };
+
+  test("renders the signup form correctly", () => {
+    renderSignup();
+    
+    // Check for heading
+    expect(screen.getByText("Get Started")).toBeInTheDocument();
+    
+    // Check for form elements
+    expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/profile picture/i)).toBeInTheDocument();
+    
+    // Check for the submit button
+    expect(screen.getByRole("button", { name: /sign up/i })).toBeInTheDocument();
+    
+    // Check for login toggle text
+    expect(screen.getByText(/already have an account\?/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /log in/i })).toBeInTheDocument();
+  });
+
+  test("calls onToggleLogin when Log In button is clicked", () => {
+    renderSignup();
+    
+    const loginButton = screen.getByRole("button", { name: /log in/i });
+    fireEvent.click(loginButton);
+    
+    expect(onToggleLoginMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("updates username input value on change", () => {
+    renderSignup();
+    
+    const usernameInput = screen.getByLabelText(/username/i);
+    fireEvent.change(usernameInput, { target: { value: "testuser" } });
+    
+    expect(usernameInput).toHaveValue("testuser");
+  });
+
+  test("updates password input value on change", () => {
+    renderSignup();
+    
+    const passwordInput = screen.getByLabelText(/password/i);
+    fireEvent.change(passwordInput, { target: { value: "password123" } });
+    
+    expect(passwordInput).toHaveValue("password123");
+  });
+
+  test("renders password requirements component", () => {
+    renderSignup();
+    
+    // The PasswordRequirements component should be rendered
+    expect(screen.getByText(/password must contain/i)).toBeInTheDocument();
+  });
+
+  test("validates password on blur", () => {
+    // Mock validatePassword to return false (password invalid)
+    vi.mocked(utils.validatePassword).mockReturnValue(true);
+    
+    renderSignup();
+    
+    const passwordInput = screen.getByLabelText(/password/i);
+    fireEvent.change(passwordInput, { target: { value: "weak" } });
+    fireEvent.blur(passwordInput);
+    
+    expect(utils.validatePassword).toHaveBeenCalledWith("weak");
+  });
+
+  test("handles file input change for profile picture", async () => {
+    renderSignup();
+    
+    // Create a mock file
+    const file = new File(["dummy content"], "profile.png", { type: "image/png" });
+    const fileInput = screen.getByLabelText(/profile picture/i);
+    
+    // Mock file selection
+    Object.defineProperty(fileInput, "files", {
+      value: [file],
+    });
+    
+    fireEvent.change(fileInput);
+    
+    // After the change, the image preview should be shown
+    await waitFor(() => {
+      const previewImage = document.querySelector("img");
+      expect(previewImage).toBeInTheDocument();
+      expect(previewImage).toHaveAttribute("src", "mocked-url");
+      expect(URL.createObjectURL).toHaveBeenCalledWith(file);
+    });
+  });
+
+  test("shows error message when password criteria not met on submit", async () => {
+    // Mock validatePassword to return true (password error)
+    vi.mocked(utils.validatePassword).mockReturnValue(true);
+    
+    renderSignup();
+    
+    // Fill out the form
+    const usernameInput = screen.getByLabelText(/username/i);
+    const passwordInput = screen.getByLabelText(/password/i);
+    const submitButton = screen.getByRole("button", { name: /sign up/i });
+    
+    fireEvent.change(usernameInput, { target: { value: "testuser" } });
+    fireEvent.change(passwordInput, { target: { value: "weak" } });
+    
+    // Submit the form
+    fireEvent.click(submitButton);
+    
+    // Error message should be shown
+    await waitFor(() => {
+      expect(screen.getByText(/password criteria not met/i)).toBeInTheDocument();
+    });
+    
+    // Mutate should not have been called
+    expect(parent.postAddParent).not.toHaveBeenCalled();
+  });
+
+  test("submits form successfully with valid data", async () => {
+    // Mock validatePassword to return false (no password error)
+    vi.mocked(utils.validatePassword).mockReturnValue(false);
+    // Mock convertToBase64 to return a base64 string
+    vi.mocked(utils.convertToBase64).mockResolvedValue("base64-image-data");
+    // Mock postAddParent to resolve successfully
+    vi.mocked(parent.postAddParent).mockResolvedValue({ success: true });
+    
+    renderSignup();
+    
+    // Fill out the form
+    const usernameInput = screen.getByLabelText(/username/i);
+    const passwordInput = screen.getByLabelText(/password/i);
+    const fileInput = screen.getByLabelText(/profile picture/i);
+    const submitButton = screen.getByRole("button", { name: /sign up/i });
+    
+    fireEvent.change(usernameInput, { target: { value: "testuser" } });
+    fireEvent.change(passwordInput, { target: { value: "StrongP@ss123" } });
+    
+    // Mock file selection
+    const file = new File(["dummy content"], "profile.png", { type: "image/png" });
+    Object.defineProperty(fileInput, "files", {
+      value: [file],
+    });
+    fireEvent.change(fileInput);
+    
+    // Submit the form
+    fireEvent.click(submitButton);
+    
+    // Check that convertToBase64 was called with the file
+    await waitFor(() => {
+      expect(utils.convertToBase64).toHaveBeenCalledWith(file);
+    });
+    
+    // Check that postAddParent was called with the correct data
+    await waitFor(() => {
+      expect(parent.postAddParent).toHaveBeenCalledWith({
+        username: "testuser",
+        password: "StrongP@ss123",
+        profilePic: "base64-image-data",
+      });
+    });
+  });
+
+  test("shows pending state during form submission", async () => {
+    // Mock necessary functions
+    vi.mocked(utils.validatePassword).mockReturnValue(false);
+    
+    // Mock the useMutation hook to show pending state
+    vi.mocked(require("@tanstack/react-query").useMutation).mockReturnValue({
+      mutate: vi.fn(),
+      isError: false,
+      isPending: true,
+      error: null,
+    });
+    
+    renderSignup();
+    
+    // Check for loading spinner and text
+    expect(screen.getByText(/creating account\.\.\./i)).toBeInTheDocument();
+    expect(document.querySelector(".animate-spin")).toBeInTheDocument();
+  });
+
+  test("shows error message when signup fails", async () => {
+    // Mock the useMutation hook to show error state
+    vi.mocked(require("@tanstack/react-query").useMutation).mockReturnValue({
+      mutate: vi.fn(),
+      isError: true,
+      isPending: false,
+      error: new Error("Username already exists"),
+    });
+    
+    renderSignup();
+    
+    // Check for error message
+    expect(screen.getByText(/username already exists/i)).toBeInTheDocument();
+  });
+});

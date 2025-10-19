@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",  // Using ES modules
+    "moduleResolution": "NodeNext",  // Resolves modules like Node.js does (including file extensions)
+    "target": "ESNext",  // Target ES6 for modern JavaScript features
+    "outDir": "./dist",  // Output directory for compiled JavaScript
+    "esModuleInterop": true,  // Ensure interoperability with CommonJS modules
+    "allowJs": true,  // Allow JavaScript files in the project
+    "strict": true,  // Enables strict type-checking options
+    "resolveJsonModule": true,  // Allows importing JSON files
+    "skipLibCheck": true,  // Skip type checking of declaration files
+    "forceConsistentCasingInFileNames": true,  // Ensures consistent file name casing
+  },
+  "include": [
+    "src/**/*.ts"  // Include all TypeScript files in the `src` folder
+, "db_helper/dbHelper.ts"  ]
+}
