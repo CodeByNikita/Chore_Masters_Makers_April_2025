@@ -4,7 +4,7 @@ A gamified household task management system designed to help parents assign chor
 
 ## Live Demo
 
-[View Live Application](#) <[!-- Add your deployment URL here -->](https://chore-masters-frontend.onrender.com/)
+[View Live Application](https://chore-masters-frontend.onrender.com/)
 
 ## Features
 
